@@ -1,0 +1,115 @@
+{
+  "name": "Auto-Classifier-Customer-Feedback",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "1",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "Sheet1!A:B"
+      },
+      "id": "2",
+      "name": "Google Sheets - Poll",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [400, 300],
+      "credentials": {
+        "googleApi": "YOUR_GOOGLE_SHEETS_CREDENTIALS"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return items.map(item => {\n  return {\n    json: {\n      feedback: item.json.Feedback\n    }\n  };\n});"
+      },
+      "id": "3",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "method": "POST",
+        "authentication": "headerAuth",
+        "responseFormat": "json",
+        "options": {},
+        "bodyParametersJson": "{\n  \"model\": \"mixtral-8x7b-32768\",\n  \"messages\": [\n    {\"role\": \"system\", \"content\": \"Classify the sentiment and summarize the customer feedback.\"},\n    {\"role\": \"user\", \"content\": \"{{$json[\\\"feedback\\\"]}}\"}\n  ]\n}"
+      },
+      "id": "4",
+      "name": "Classify with Groq",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [800, 300],
+      "credentials": {
+        "httpHeaderAuth": "YOUR_GROQ_API_KEY"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return items.map(item => {\n  const text = item.json.choices[0].message.content;\n  const sentimentMatch = text.match(/Sentiment: (.*)/i);\n  const summaryMatch = text.match(/Summary: (.*)/i);\n  return {\n    json: {\n      Sentiment: sentimentMatch ? sentimentMatch[1] : '',\n      Summary: summaryMatch ? summaryMatch[1] : ''\n    }\n  };\n});"
+      },
+      "id": "5",
+      "name": "Extract Sentiment & Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "Sentiment": "={{$json[\"Sentiment\"]}}",
+          "Summary": "={{$json[\"Summary\"]}}"
+        }
+      },
+      "id": "6",
+      "name": "Edit Fields [SET node]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "Sheet1!C:D",
+        "data": "={{$json}}"
+      },
+      "id": "7",
+      "name": "Update Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 2,
+      "position": [1400, 300],
+      "credentials": {
+        "googleApi": "YOUR_GOOGLE_SHEETS_CREDENTIALS"
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [[{"node": "Google Sheets - Poll", "type": "main", "index": 0}]]
+    },
+    "Google Sheets - Poll": {
+      "main": [[{"node": "Code", "type": "main", "index": 0}]]
+    },
+    "Code": {
+      "main": [[{"node": "Classify with Groq", "type": "main", "index": 0}]]
+    },
+    "Classify with Groq": {
+      "main": [[{"node": "Extract Sentiment & Summary", "type": "main", "index": 0}]]
+    },
+    "Extract Sentiment & Summary": {
+      "main": [[{"node": "Edit Fields [SET node]", "type": "main", "index": 0}]]
+    },
+    "Edit Fields [SET node]": {
+      "main": [[{"node": "Update Google Sheet", "type": "main", "index": 0}]]
+    }
+  }
+}
